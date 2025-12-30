@@ -1,0 +1,96 @@
+start_cash_usd: 500
+
+paper_state_path: "./logs/paper_state.json"
+ui_publish_interval_sec: 0.25
+paper_save_every_sec: 2.0
+
+market:
+  yes_asset: "YOUR_YES_ASSET_ID"
+  no_asset: "YOUR_NO_ASSET_ID"
+  end_ts: 1767001500
+
+env:
+  mode: "paper"
+  timezone: "UTC"
+  log_dir: "./logs"
+
+auth:
+  api_host: "https://clob.polymarket.com"
+  ws_host: "wss://ws-subscriptions-clob.polymarket.com"
+  api_key_env: "POLY_API_KEY"
+  api_secret_env: "POLY_API_SECRET"
+  passphrase_env: "POLY_PASSPHRASE"
+
+markets:
+  max_markets_active: 2
+  min_time_to_expiry_sec: 60
+  max_time_to_expiry_sec: 1200
+
+scanner:
+  refresh_sec: 60
+  min_volume_24h: 75000
+  min_depth_usd: 8000
+  max_spread_ticks: 4
+
+signals:
+  use_external_price: true
+  fair_value_model: "simple"
+  edge_ticks: 1
+  volatility_pause_threshold: 0.01
+
+strategy:
+  mode: "scalp_maker"
+  quote_refresh_ms: 60
+  order_ttl_sec: 20
+  order_size_shares: 25
+  max_orders_per_market: 2
+
+risk:
+  max_position_shares_per_market: 1000
+  max_total_position_shares: 1000
+  max_daily_loss_usd: 500
+  kill_on_disconnect: true
+  kill_on_reject_spike: true
+  reject_spike_count: 3
+  reject_spike_window_sec: 60
+
+execution:
+  rate_limit_per_sec: 6
+  cancel_replace_cooldown_ms: 60
+  slippage_guard_ticks: 2
+
+gamma:
+  base_url: "https://gamma-api.polymarket.com"
+  slug_prefix: "btc-updown-15m-"
+  interval_sec: 900
+  lookahead_intervals: 12
+
+  user_agent: "Mozilla/5.0"
+  accept: "application/json"
+  cookie_env: "POLY_GAMMA_COOKIE"   # optional; only if you keep getting 401
+
+  base_url: "https://gamma-api.polymarket.com"
+  slug_prefix: "btc-updown-15m-"
+  interval_sec: 900
+  lookahead_intervals: 12   # checks next 12 x 15m windows
+
+scalp:
+  enabled: true
+
+  # Entry
+  entry_price_min: 0.81
+  entry_price_max: 0.90
+  max_spread_ticks: 2         # 1c
+  tte_max_seconds: 700    
+  entry_ttl_seconds: 20
+
+  # Brackets
+  tp_pct: 0.12
+  sl_pct: 0.10
+
+  # Dynamic sizing (your rule)
+  bet_frac_start: 0.50
+  bet_frac_step: 0.01
+  bet_frac_min: 0.01
+  bet_frac_max: 0.50
+  stake_cap_usd: 1000

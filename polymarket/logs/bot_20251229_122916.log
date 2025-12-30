@@ -1,0 +1,44 @@
+2025-12-29 12:29:16,019 INFO Starting bot mode=paper
+2025-12-29 12:29:16,363 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:29:16,393 INFO WS connected: wss://ws-subscriptions-clob.polymarket.com/ws/market
+2025-12-29 12:29:16,393 INFO Subscribed assets=2
+2025-12-29 12:29:16,966 INFO [PAPER] quote 86832599764820386822274184067233051922704970119929016884243242761158316064623 bid=0.48 ask=0.52 size=25.0
+2025-12-29 12:29:16,966 INFO [PAPER] quote 43536178424427788735828987673908378253365553329930433399552699130356855282154 bid=0.48 ask=0.52 size=25.0
+2025-12-29 12:30:16,845 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:31:17,132 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:32:17,420 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:33:17,662 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:34:17,906 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:35:18,241 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:36:18,472 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:37:18,638 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:38:18,827 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:39:19,067 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:40:19,287 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:40:19,652 INFO Subscribed assets=2
+2025-12-29 12:40:19,693 WARNING WS disconnected: Expecting value: line 1 column 1 (char 0)
+2025-12-29 12:40:21,890 INFO WS connected: wss://ws-subscriptions-clob.polymarket.com/ws/market
+2025-12-29 12:40:21,891 INFO Subscribed assets=2
+2025-12-29 12:40:22,309 INFO [PAPER] quote 45577897784517884153237851168815857517668053002540184917615634065251935944977 bid=0.48 ask=0.52 size=25.0
+2025-12-29 12:40:22,309 INFO [PAPER] quote 39353784304847414467551973125733325819234016113001909716840672659437928869790 bid=0.48 ask=0.52 size=25.0
+2025-12-29 12:41:19,501 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:42:19,977 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:43:20,366 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:44:20,727 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:45:21,103 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:46:21,315 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:47:21,486 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:48:21,813 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:49:22,044 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:50:22,215 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:51:22,388 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:52:22,666 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:53:22,929 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:54:23,191 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:55:23,344 INFO Scanner picked 2 token(s) via slug-scan
+2025-12-29 12:55:23,400 INFO Subscribed assets=2
+2025-12-29 12:55:23,437 WARNING WS disconnected: Expecting value: line 1 column 1 (char 0)
+2025-12-29 12:55:25,618 INFO WS connected: wss://ws-subscriptions-clob.polymarket.com/ws/market
+2025-12-29 12:55:25,618 INFO Subscribed assets=2
+2025-12-29 12:55:25,762 INFO [PAPER] quote 65785415053400588677605059459834316696628836871232352529044315093371642981773 bid=0.48 ask=0.52 size=25.0
+2025-12-29 12:55:25,762 INFO [PAPER] quote 55380333182327258585270401378504372301748439173210839400678530329238678798364 bid=0.48 ask=0.52 size=25.0
