@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyscalp - Trading Bot</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>⚡ POLYSCALP</h1>
+                <p>Polymarket BTC 15m Auto-Scalper</p>
+            </div>
+            <div class="header-status">
+                <span id="status-badge" class="badge badge-stopped">STOPPED</span>
+            </div>
+        </header>
+
+        <!-- Control Panel -->
+        <section class="control-panel">
+            <button id="btn-start" class="btn btn-primary" onclick="startBot()">▶ START</button>
+            <button id="btn-stop" class="btn btn-danger" onclick="stopBot()" disabled>⏹ STOP</button>
+            <button id="btn-close-all" class="btn btn-warning" onclick="closeAll()">⚠ CLOSE ALL</button>
+            <div class="spacer"></div>
+            <div class="info-inline">
+                <div class="info-item">
+                    <span class="label">Market</span>
+                    <span id="market-slug" class="value">--</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">TTE</span>
+                    <span id="market-tte" class="value">--</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Left Column -->
+            <div class="left-col">
+                <!-- Quick Stats -->
+                <section class="card">
+                    <h2>📊 Portfolio</h2>
+                    <div class="stats-grid">
+                        <div class="stat">
+                            <span class="stat-label">Balance</span>
+                            <span id="stat-balance" class="stat-value">$0.00</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">PnL</span>
+                            <span id="stat-pnl" class="stat-value pnl">$0.00</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Winrate</span>
+                            <span id="stat-winrate" class="stat-value">0%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Bet%</span>
+                            <span id="stat-bet-frac" class="stat-value">0%</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Live Prices -->
+                <section class="card">
+                    <h2>💰 Live Prices</h2>
+                    <div class="prices-grid">
+                        <div class="price-card">
+                            <h3>YES</h3>
+                            <div class="price-display">
+                                <div class="bid">
+                                    <span class="price-label">Bid</span>
+                                    <span id="price-yes-bid" class="price">--</span>
+                                </div>
+                                <div class="ask">
+                                    <span class="price-label">Ask</span>
+                                    <span id="price-yes-ask" class="price">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="price-card">
+                            <h3>NO</h3>
+                            <div class="price-display">
+                                <div class="bid">
+                                    <span class="price-label">Bid</span>
+                                    <span id="price-no-bid" class="price">--</span>
+                                </div>
+                                <div class="ask">
+                                    <span class="price-label">Ask</span>
+                                    <span id="price-no-ask" class="price">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Book Chart -->
+                <section class="card">
+                    <h2>📈 Book Chart (Live ~100ms)</h2>
+                    <div class="chart-container">
+                        <canvas id="bookChart"></canvas>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Right Column -->
+            <div class="right-col">
+                <!-- Positions Table -->
+                <section class="card">
+                    <h2>📍 Positions</h2>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Asset</th>
+                                    <th>Shares</th>
+                                    <th>Avg Price</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positions-table">
+                                <tr><td colspan="4" class="no-data">No positions</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Open Orders Table -->
+                <section class="card">
+                    <h2>⏳ Open Orders</h2>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Side</th>
+                                    <th>Price</th>
+                                    <th>Shares</th>
+                                    <th>Age(s)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orders-table">
+                                <tr><td colspan="4" class="no-data">No open orders</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Trade Stats -->
+                <section class="card">
+                    <h2>🏆 Trade Stats</h2>
+                    <div class="trade-stats">
+                        <div class="stat-row">
+                            <span class="label">Total Trades: </span>
+                            <span id="stats-total" class="value">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Wins:</span>
+                            <span id="stats-wins" class="value win">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Losses:</span>
+                            <span id="stats-losses" class="value loss">0</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Equity Chart -->
+        <section class="card full-width">
+            <h2>💹 Equity & PnL Over Time</h2>
+            <div class="chart-container-large">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
