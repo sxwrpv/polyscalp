@@ -1,5 +1,4 @@
-# Minimal config for paper trading
-start_cash_usd: 500
+start_cash_usd:  500
 
 env: 
   mode: "paper"
