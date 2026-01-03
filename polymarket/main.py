@@ -1,193 +1,141 @@
-# main.py
-from __future__ import annotations
-
+#!/usr/bin/env python3
+"""
+Polyscalp:  Paper trading bot for Polymarket BTC 15m markets. 
+"""
 import asyncio
-import contextlib
 import logging
-import os
-import time
-from pathlib import Path
-from typing import Any, Dict, Optional
-
 import sys
-import shutil
+from pathlib import Path
+from typing import Optional
+
 import yaml
 
 from bot.datafeed import MarketDataFeed, WSConfig
-from bot.execution import PaperExecution, PaperExecCfg
-from bot.scalp_mode import ScalpMode, MarketSpec
-from bot.strategy import EntryRules
+from bot.execution import PaperExecution
+from bot. gamma import GammaClient
 from bot.risk import ScalpRisk
-
-from bot.gamma import GammaClient, GammaCfg
+from bot.scalp_mode import ScalpMode, MarketSpec
 from bot.scanner import scan_btc_15m_by_slug, GammaScanParams
+from bot. strategy import EntryRules
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+log = logging.getLogger("polyscalp")
 
 
-def load_yaml(path: str = "config.yaml") -> Dict[str, Any]:
+def load_config(path: str = "config.yaml") -> dict:
     return yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
 
 
-def status_line(text: str) -> None:
-    """Rewrite one terminal line (no newline)."""
-    width = shutil.get_terminal_size((120, 20)).columns
-    sys.stdout.write("\r" + text[: width - 1].ljust(width - 1))
-    sys.stdout.flush()
-
-
-async def _stop_feed(feed: MarketDataFeed, feed_task: asyncio.Task, log: logging.Logger) -> None:
-    feed.stop()
-    feed_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await feed_task
-
-
-async def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log = logging.getLogger("polyscalp")
-
-    cfg = load_yaml("config.yaml")
-    start_cash = float(cfg.get("start_cash_usd", 500))
-
-    # --- hosts ---
-    auth = cfg.get("auth", {}) or {}
-    ws_host = auth.get("ws_host") or "wss://ws-subscriptions-clob.polymarket.com"
-    ws_url = ws_host.rstrip("/") + "/ws/market"
-
-    # --- gamma scanner config ---
-    g = cfg.get("gamma", {}) or {}
-    m = cfg.get("markets", {}) or {}
-
-    cookie_env = g.get("cookie_env") or "POLY_GAMMA_COOKIE"
-    gamma_cookie = os.getenv(cookie_env)
-
-    gamma = GammaClient(
-        GammaCfg(
-            base_url=str(g.get("base_url", "https://gamma-api.polymarket.com")),
-            user_agent=str(g.get("user_agent", "Mozilla/5.0")),
-            accept=str(g.get("accept", "application/json")),
-            cookie=gamma_cookie,
-        )
-    )
-
+async def main():
+    cfg = load_config("config.yaml")
+    
+    # Setup
+    start_cash = float(cfg. get("start_cash_usd", 500))
+    ws_url = cfg["auth"]["ws_host"]. rstrip("/") + "/ws/market"
+    
+    gamma = GammaClient(cfg["gamma"]["base_url"])
     scan_params = GammaScanParams(
-        slug_prefix=str(g.get("slug_prefix", "btc-updown-15m-")),
-        interval_sec=int(g.get("interval_sec", 900)),
-        lookahead_intervals=int(g.get("lookahead_intervals", 12)),
-        fallback_search_query=str(g.get("fallback_search_query", "btc updown 15m")),
-        fallback_limit=int(g.get("fallback_limit", 50)),
+        slug_prefix=cfg["gamma"]["slug_prefix"],
+        interval_sec=cfg["gamma"]["interval_sec"],
+        lookahead_intervals=cfg["gamma"]["lookahead_intervals"],
     )
-
-    min_tte = int(m.get("min_time_to_expiry_sec", 120))
-    max_tte = int(m.get("max_time_to_expiry_sec", 1200))
-    rollover_grace_sec = int(cfg.get("rollover_grace_sec", 2))
-
-    # Shared top-of-book cache used by execution marking
-    price_cache: Dict[str, tuple[Optional[float], Optional[float]]] = {}
-
-    # Execution persists across markets (keeps balance)
-    exec_ = PaperExecution(
-        cfg=PaperExecCfg(start_cash_usd=start_cash),
-        price_cache=price_cache,
-        log=log,
+    
+    min_tte = cfg["markets"]["min_time_to_expiry_sec"]
+    max_tte = cfg["markets"]["max_time_to_expiry_sec"]
+    
+    # Shared state
+    price_cache = {}
+    exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
+    rules = EntryRules(
+        price_min=cfg["strategy"]["entry_price_min"],
+        price_max=cfg["strategy"]["entry_price_max"],
+        tte_max_seconds=cfg["strategy"]["tte_max_seconds"],
     )
-
-    rules = EntryRules()
-    risk = ScalpRisk()
-
-    feed: Optional[MarketDataFeed] = None
-    feed_task: Optional[asyncio.Task] = None
-    scalp: Optional[ScalpMode] = None
-    market: Optional[MarketSpec] = None
-    current_slug: Optional[str] = None
-
-    def on_book(asset_id: str, bid: Optional[float], ask: Optional[float]) -> None:
+    risk = ScalpRisk(
+        tp_pct=cfg["risk"]["tp_pct"],
+        sl_pct=cfg["risk"]["sl_pct"],
+    )
+    
+    feed:  Optional[MarketDataFeed] = None
+    scalp:  Optional[ScalpMode] = None
+    market:  Optional[MarketSpec] = None
+    
+    def on_book(asset_id: str, bid, ask):
         price_cache[asset_id] = (bid, ask)
-        if scalp is not None:
+        if scalp:
             scalp.on_book_top(asset_id, bid, ask)
-
-    async def start_new_market() -> None:
-        nonlocal feed, feed_task, scalp, market, current_slug
-
-        # stop previous feed if running
-        if feed is not None and feed_task is not None:
-            await _stop_feed(feed, feed_task, log)
-            feed, feed_task = None, None
-
+    
+    async def start_new_market():
+        nonlocal feed, scalp, market
+        
+        if feed: 
+            feed.stop()
+        
         found = scan_btc_15m_by_slug(
-            gamma,
-            params=scan_params,
-            min_tte_sec=min_tte,
-            max_tte_sec=max_tte,
-            debug=False,
+            gamma, params=scan_params,
+            min_tte_sec=min_tte, max_tte_sec=max_tte
         )
-
-        yes_asset = str(found["yes_asset"])
-        no_asset = str(found["no_asset"])
-        end_ts = int(found["end_ts"])
-        current_slug = str(found.get("slug", ""))
-
-        log.info(f"[SCAN] slug={current_slug} tte={found.get('tte')} end_ts={end_ts}")
-
+        
+        yes_asset = found["yes_asset"]
+        no_asset = found["no_asset"]
+        end_ts = found["end_ts"]
+        slug = found. get("slug", "? ")
+        
+        log.info(f"Market:  {slug} | TTE: {found['tte']}s")
+        
         market = MarketSpec(yes_asset=yes_asset, no_asset=no_asset, end_ts=end_ts)
-
-        # Reset cache for the two new assets
         price_cache.clear()
-        price_cache[market.yes_asset] = (None, None)
-        price_cache[market.no_asset] = (None, None)
-
+        price_cache[yes_asset] = (None, None)
+        price_cache[no_asset] = (None, None)
+        
         scalp = ScalpMode(exec=exec_, market=market, rules=rules, risk=risk, log=log)
-
+        
         feed = MarketDataFeed(
             cfg=WSConfig(ws_url=ws_url),
-            asset_ids=[market.yes_asset, market.no_asset],
+            asset_ids=[yes_asset, no_asset],
             on_book_top=on_book,
             log=log,
         )
-        feed_task = asyncio.create_task(feed.run())
-
-    # start first market
+        asyncio.create_task(feed. run())
+    
     await start_new_market()
-
+    
     try:
         while True:
-            assert market is not None and scalp is not None and feed is not None and feed_task is not None
-
-            now = int(time.time())
-            tte = market.end_ts - now
-
-            # single-line status (updates constantly)
-            yes_bid, yes_ask = price_cache.get(market.yes_asset, (None, None))
-            no_bid, no_ask = price_cache.get(market.no_asset, (None, None))
-
-            def fmt(x: Optional[float]) -> str:
-                return "--" if x is None else f"{x:.2f}"
-
-            status_line(
-                f"slug={current_slug} | tte={tte:>4}s | "
-                f"YES {fmt(yes_bid)}/{fmt(yes_ask)} | "
-                f"NO {fmt(no_bid)}/{fmt(no_ask)}"
+            assert market and scalp and feed
+            
+            snap = exec_.snapshot()
+            yes_bid, yes_ask = price_cache. get(market.yes_asset, (None, None))
+            no_bid, no_ask = price_cache. get(market.no_asset, (None, None))
+            
+            # Print status
+            tte = max(0, market.end_ts - asyncio.get_event_loop().time())
+            status = (
+                f"TTE: {int(tte):>4}s | "
+                f"Balance: ${snap['equity_usd']:.2f} | "
+                f"PnL: ${snap['pnl']['total']:.2f} | "
+                f"W/L: {snap['stats']['wins']}/{snap['stats']['losses']}"
             )
-
-            if now >= (market.end_ts + rollover_grace_sec):
-                # print a newline so the log doesn't overwrite the status line
-                sys.stdout.write("\n")
-                sys.stdout.flush()
-
-                log.info(f"[ROLLOVER] market ended slug={current_slug} -> scanning next")
+            print(f"\r{status}", end="", flush=True)
+            
+            # Check market expiry
+            import time
+            if int(time.time()) >= (market.end_ts + 2):
+                print("\n[ROLLOVER]")
                 await start_new_market()
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(0.5)
                 continue
-
+            
             await scalp.step()
             await asyncio.sleep(0.2)
-
-    finally:
-        # ensure we end the status line cleanly
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-        if feed is not None and feed_task is not None:
-            await _stop_feed(feed, feed_task, log)
+    
+    except KeyboardInterrupt: 
+        print("\n[STOP]")
+        if feed:
+            feed.stop()
 
 
 if __name__ == "__main__":
