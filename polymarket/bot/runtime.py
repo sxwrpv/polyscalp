@@ -13,7 +13,7 @@ import yaml
 
 from bot.datafeed import MarketDataFeed, WSConfig
 from bot.execution import PaperExecution
-from bot.scalp_mode import ScalpMode, MarketSpec
+from bot. scalp_mode import ScalpMode, MarketSpec
 from bot.strategy import EntryRules
 from bot.risk import ScalpRisk
 from bot.gamma import GammaClient, GammaCfg
@@ -31,14 +31,14 @@ class BotRuntime:
 
     def __init__(self, cfg_path: str = "config.yaml", log: Optional[logging.Logger] = None) -> None:
         self.cfg_path = cfg_path
-        self.log = log or logging.getLogger("polyscalp")
+        self.log = log or logging. getLogger("polyscalp")
 
         self._task: Optional[asyncio.Task] = None
         self._stop_evt = asyncio.Event()
 
         self._cond = asyncio.Condition()
         self._seq = 0
-        self.snapshot: Dict[str, Any] = {"running": False, "status": "stopped", "ts": int(time.time())}
+        self. snapshot:  Dict[str, Any] = {"running": False, "status": "stopped", "ts": int(time.time())}
 
     async def start(self) -> None:
         if self._task and not self._task.done():
@@ -49,16 +49,16 @@ class BotRuntime:
     async def stop(self) -> None:
         self._stop_evt.set()
         if self._task:
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio. CancelledError):
                 self._task.cancel()
                 await self._task
         self._task = None
         await self._publish({"running": False, "status": "stopped", "ts": int(time.time())})
 
     def is_running(self) -> bool:
-        return self._task is not None and not self._task.done()
+        return self._task is not None and not self._task. done()
 
-    async def wait_for_update(self, last_seq: int) -> tuple[int, Dict[str, Any]]:
+    async def wait_for_update(self, last_seq: int) -> tuple[int, Dict[str, Any]]: 
         async with self._cond:
             await self._cond.wait_for(lambda: self._seq != last_seq)
             return self._seq, dict(self.snapshot)
@@ -72,17 +72,17 @@ class BotRuntime:
     async def _stop_feed(self, feed: MarketDataFeed, feed_task: asyncio.Task) -> None:
         feed.stop()
         feed_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(asyncio. CancelledError):
             await feed_task
 
     async def _run(self) -> None:
         try:
-            cfg = _load_yaml(self.cfg_path)
+            cfg = _load_yaml(self. cfg_path)
 
             # --- hosts ---
-            auth = cfg.get("auth", {}) or {}
+            auth = cfg. get("auth", {}) or {}
             ws_host = auth.get("ws_host") or "wss://ws-subscriptions-clob.polymarket.com"
-            ws_url = ws_host.rstrip("/") + "/ws/market"
+            ws_url = ws_host. rstrip("/") + "/ws/market"
 
             # --- gamma ---
             g = cfg.get("gamma", {}) or {}
@@ -98,18 +98,7 @@ class BotRuntime:
                     accept=str(g.get("accept", "application/json")),
                     cookie=gamma_cookie,
                 )
-            )        
-    state_path = str(cfg.get("paper_state_path", "./logs/paper_state.json"))
-    exec_ = PaperExecution(
-       cfg=PaperExecCfg(start_cash_usd=start_cash),
-        price_cache=price_cache,
-        log=self.log,
-        state_path=state_path,
-        persist_orders=False,
-   )
-
-# AFTER
-exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
+            )
 
             scan_params = GammaScanParams(
                 slug_prefix=str(g.get("slug_prefix", "btc-updown-15m-")),
@@ -125,26 +114,28 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
 
             # --- execution (paper) ---
             start_cash = float(cfg.get("start_cash_usd", 500))
-
-            # shared top-of-book cache for mark-to-mid
             price_cache: Dict[str, tuple[Optional[float], Optional[float]]] = {}
 
-            state_path = str(cfg.get("paper_state_path", "./logs/paper_state.json"))
-            exec_ = PaperExecution(
-                cfg=PaperExecCfg(start_cash_usd=start_cash),
-                price_cache=price_cache,
-                log=self.log,
-                state_path=state_path,
-                persist_orders=False,
+            exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
+
+            rules = EntryRules(
+                price_min=float(cfg.get("strategy", {}).get("entry_price_min", 0.81)),
+                price_max=float(cfg.get("strategy", {}).get("entry_price_max", 0.90)),
+                tte_max_seconds=int(cfg.get("strategy", {}).get("tte_max_seconds", 700)),
+                entry_ttl_seconds=int(cfg. get("strategy", {}).get("entry_ttl_seconds", 20)),
+            )
+            risk = ScalpRisk(
+                tp_pct=float(cfg.get("risk", {}).get("tp_pct", 0.12)),
+                sl_pct=float(cfg. get("risk", {}).get("sl_pct", 0.10)),
+                bet_frac_start=float(cfg.get("risk", {}).get("bet_frac_start", 0.50)),
+                bet_frac_step=float(cfg.get("risk", {}).get("bet_frac_step", 0.01)),
+                stake_cap_usd=float(cfg.get("risk", {}).get("stake_cap_usd", 1000)),
             )
 
-            rules = EntryRules()
-            risk = ScalpRisk()
-
-            feed: Optional[MarketDataFeed] = None
-            feed_task: Optional[asyncio.Task] = None
-            scalp: Optional[ScalpMode] = None
-            market: Optional[MarketSpec] = None
+            feed:  Optional[MarketDataFeed] = None
+            feed_task:  Optional[asyncio.Task] = None
+            scalp:  Optional[ScalpMode] = None
+            market:  Optional[MarketSpec] = None
             current_slug: Optional[str] = None
 
             def on_book(asset_id: str, bid: Optional[float], ask: Optional[float]) -> None:
@@ -155,7 +146,7 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
             async def start_new_market() -> None:
                 nonlocal feed, feed_task, scalp, market, current_slug
 
-                if feed is not None and feed_task is not None:
+                if feed is not None and feed_task is not None: 
                     await self._stop_feed(feed, feed_task)
                     feed, feed_task = None, None
 
@@ -170,14 +161,13 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
                 yes_asset = str(found["yes_asset"])
                 no_asset = str(found["no_asset"])
                 end_ts = int(found["end_ts"])
-                current_slug = str(found.get("slug", ""))
+                current_slug = str(found. get("slug", ""))
 
-                self.log.info(f"[SCAN] slug={current_slug} tte={found.get('tte')} end_ts={end_ts}")
+                self.log.info(f"[SCAN] slug={current_slug} tte={found. get('tte')} end_ts={end_ts}")
 
                 market = MarketSpec(yes_asset=yes_asset, no_asset=no_asset, end_ts=end_ts)
 
-                # keep exec state; reset only the live price cache for current assets
-                price_cache.clear()
+                price_cache. clear()
                 price_cache[market.yes_asset] = (None, None)
                 price_cache[market.no_asset] = (None, None)
 
@@ -191,7 +181,7 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
                 )
                 feed_task = asyncio.create_task(feed.run())
 
-            await self._publish({"running": True, "status": "starting", "ts": int(time.time())})
+            await self._publish({"running": True, "status": "starting", "ts": int(time. time())})
             await start_new_market()
 
             while not self._stop_evt.is_set():
@@ -201,15 +191,14 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
                 tte = market.end_ts - now
 
                 yes_bid, yes_ask = price_cache.get(market.yes_asset, (None, None))
-                no_bid, no_ask = price_cache.get(market.no_asset, (None, None))
+                no_bid, no_ask = price_cache.get(market. no_asset, (None, None))
 
-                # optional bet fraction if your ScalpMode has a sizer
                 bet_frac = None
                 try:
                     sizer = getattr(scalp, "sizer", None)
                     if sizer and hasattr(sizer, "current_fraction"):
                         bet_frac = float(sizer.current_fraction())
-                except Exception:
+                except Exception: 
                     pass
 
                 exs = exec_.snapshot()
@@ -229,7 +218,7 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
                         "no_bid": no_bid,
                         "no_ask": no_ask,
                         "bet_frac": bet_frac,
-                        "balance": exs.get("equity_usd"),
+                        "balance":  exs.get("equity_usd"),
                         "pnl": exs.get("pnl"),
                         "stats": exs.get("stats"),
                         "positions": exs.get("positions"),
@@ -249,7 +238,7 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.log.exception("BotRuntime crashed")
+            self.log. exception("BotRuntime crashed")
             await self._publish(
                 {
                     "running": False,
@@ -259,6 +248,4 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
                 }
             )
         finally:
-
-            await self._publish({"running": False, "status": "stopped", "ts": int(time.time())})
-
+            await self._publish({"running": False, "status": "stopped", "ts":  int(time.time())})
