@@ -98,7 +98,18 @@ class BotRuntime:
                     accept=str(g.get("accept", "application/json")),
                     cookie=gamma_cookie,
                 )
-            )
+            )        
+    state_path = str(cfg.get("paper_state_path", "./logs/paper_state.json"))
+    exec_ = PaperExecution(
+       cfg=PaperExecCfg(start_cash_usd=start_cash),
+        price_cache=price_cache,
+        log=self.log,
+        state_path=state_path,
+        persist_orders=False,
+   )
+
+# AFTER
+exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
 
             scan_params = GammaScanParams(
                 slug_prefix=str(g.get("slug_prefix", "btc-updown-15m-")),
@@ -248,4 +259,5 @@ class BotRuntime:
                 }
             )
         finally:
+
             await self._publish({"running": False, "status": "stopped", "ts": int(time.time())})
