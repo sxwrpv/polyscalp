@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
 
 from bot.runtime import BotRuntime
 
@@ -24,10 +24,11 @@ HTML = r"""
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Polyscalp UI</title>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     :root{
-      --bg0:#07090b;
-      --bg1:#0b0f14;
+      --bg0:#07090b; --bg1:#0b0f14;
       --glass: rgba(255,255,255,.06);
       --stroke: rgba(255,255,255,.12);
       --muted: rgba(255,255,255,.65);
@@ -35,7 +36,6 @@ HTML = r"""
       --shadow: 0 20px 80px rgba(0,0,0,.45);
       --radius2: 26px;
     }
-
     *{ box-sizing:border-box; }
     html,body{ height:100%; }
     body{
@@ -49,47 +49,27 @@ HTML = r"""
         linear-gradient(180deg, var(--bg0), var(--bg1));
       overflow-x:hidden;
     }
-
     body::before{
       content:"";
-      position:fixed;
-      inset:0;
-      pointer-events:none;
-      opacity:.22;
+      position:fixed; inset:0; pointer-events:none; opacity:.22;
       background-image:
         linear-gradient(rgba(255,255,255,.08) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px);
       background-size: 120px 120px;
       mask-image: radial-gradient(closest-side at 55% 45%, rgba(0,0,0,.95), transparent 82%);
     }
-
     body::after{
       content:"";
-      position:fixed;
-      inset:-120px;
-      pointer-events:none;
-      background: radial-gradient(1600px 1200px at 50% 30%, transparent 40%, rgba(0,0,0,.45) 78%);
+      position:fixed; inset:-120px; pointer-events:none;
+      background: radial-gradient(900px 700px at 50% 30%, transparent 40%, rgba(0,0,0,.45) 78%);
     }
 
-    .wrap{
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 24px 22px 40px;
-      position:relative;
-      z-index:1;
-    }
-
+    .wrap{ max-width: 1300px; margin: 0 auto; padding: 24px 22px 40px; position:relative; z-index:1; }
     .topbar{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap: 16px;
-      padding: 10px 14px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.04);
-      border: 1px solid rgba(255,255,255,.08);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 8px 40px rgba(0,0,0,.25);
+      display:flex; align-items:center; justify-content:space-between; gap: 16px;
+      padding: 10px 14px; border-radius: 999px;
+      background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+      backdrop-filter: blur(10px); box-shadow: 0 8px 40px rgba(0,0,0,.25);
     }
     .brand{ display:flex; align-items:center; gap:10px; font-weight:650; letter-spacing:.2px; }
     .dot{ width:10px; height:10px; border-radius:50%; background: rgba(120,220,180,.9); box-shadow: 0 0 18px rgba(120,220,180,.45); }
@@ -97,32 +77,13 @@ HTML = r"""
     .navlinks a{ color:inherit; text-decoration:none; }
     .navlinks a:hover{ color: rgba(255,255,255,.9); }
 
-    .grid{
-      margin-top: 26px;
-      display:grid;
-      grid-template-columns: 1.25fr .75fr;
-      gap: 22px;
-      align-items:start;
-    }
-
+    .grid{ margin-top: 26px; display:grid; grid-template-columns: 1.25fr .75fr; gap: 22px; align-items:start; }
     .hero{ padding: 22px 6px 6px; }
     .kicker{ font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.55); margin-bottom: 10px; }
     .title{ font-size: clamp(34px, 4vw, 54px); line-height: 1.05; letter-spacing: .02em; font-weight: 720; margin: 0 0 10px; }
     .subtitle{ color: rgba(255,255,255,.7); font-size: 14px; margin: 0 0 18px; }
 
-    .chips{ display:flex; flex-wrap:wrap; gap: 10px; margin-bottom: 14px; }
-    .chip{
-      min-width: 170px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: rgba(255,255,255,.045);
-      border: 1px solid rgba(255,255,255,.08);
-      backdrop-filter: blur(10px);
-    }
-    .chip b{ display:block; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.85); margin-bottom: 4px; }
-    .chip span{ display:block; font-size: 12px; color: rgba(255,255,255,.55); }
-
-    .actions{ display:flex; gap: 10px; margin: 8px 0 24px; }
+    .actions{ display:flex; gap: 10px; margin: 8px 0 14px; flex-wrap: wrap; }
     .btn{
       border: 1px solid rgba(255,255,255,.12);
       background: rgba(255,255,255,.06);
@@ -137,17 +98,7 @@ HTML = r"""
     }
     .btn:hover{ background: rgba(255,255,255,.09); }
     .btn.primary{ border-color: rgba(120,220,180,.25); background: rgba(120,220,180,.10); }
-    .btn.danger{ border-color: rgba(255,120,120,.25); background: rgba(255,120,120,.08); }
-
-    .bigwords{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: clamp(36px, 5.8vw, 64px);
-      line-height: 1.1;
-      letter-spacing: .02em;
-      margin: 0;
-      padding: 10px 0 18px;
-      color: rgba(255,255,255,.9);
-    }
+    .btn.danger{ border-color: rgba(255,120,120,.25); background: rgba(255,120,120,.10); }
 
     .card{
       background: var(--glass);
@@ -156,6 +107,7 @@ HTML = r"""
       padding: 16px 16px;
       backdrop-filter: blur(14px);
       box-shadow: var(--shadow);
+      margin-bottom: 12px;
     }
     .card h3{ margin: 0 0 10px; font-size: 14px; letter-spacing: .02em; }
     .muted{ color: var(--muted); font-size: 12px; }
@@ -172,12 +124,7 @@ HTML = r"""
       text-overflow: ellipsis;
     }
 
-    .cards3{
-      display:grid;
-      grid-template-columns: repeat(3, minmax(0,1fr));
-      gap: 12px;
-      margin-top: 12px;
-    }
+    .cards3{ display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 12px; }
     .mini{
       border-radius: 16px;
       background: rgba(255,255,255,.04);
@@ -186,95 +133,26 @@ HTML = r"""
       min-height: 86px;
     }
     .mini .label{
-      font-size: 11px;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-      color: rgba(255,255,255,.62);
-      margin-bottom: 8px;
+      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: rgba(255,255,255,.62); margin-bottom: 8px;
     }
     .mini .val{
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 14px;
-      color: rgba(255,255,255,.90);
-      word-break: break-word;
+      font-size: 14px; color: rgba(255,255,255,.90);
     }
 
     .side{ display:flex; flex-direction:column; gap: 12px; }
-
-    .portrait{
-      border-radius: 22px;
-      border: 1px solid rgba(255,255,255,.10);
-      background:
-        radial-gradient(800px 320px at 30% 0%, rgba(120,220,180,.18), transparent 60%),
-        radial-gradient(800px 320px at 80% 10%, rgba(120,130,250,.16), transparent 60%),
-        rgba(255,255,255,.04);
-      backdrop-filter: blur(16px);
-      box-shadow: var(--shadow);
-      padding: 18px;
-      min-height: 220px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      position:relative;
-      overflow:hidden;
-    }
-    .portrait::before{
-      content:"";
-      position:absolute;
-      inset:0;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.06), transparent 40%),
-        radial-gradient(600px 300px at 50% 0%, rgba(255,255,255,.10), transparent 60%);
-      opacity:.7;
-    }
-    .logoBox{ position:relative; display:flex; flex-direction:column; align-items:center; gap: 10px; text-align:center; }
-    .logoMark{
-      width: 64px; height: 64px;
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,.14);
-      background: rgba(255,255,255,.06);
-      display:grid; place-items:center;
-      font-weight: 800;
-      letter-spacing: .02em;
-      box-shadow: 0 10px 60px rgba(0,0,0,.25);
-    }
-    .logoBox .name{ font-size: 16px; font-weight: 720; }
-    .logoBox .desc{ font-size: 12px; color: rgba(255,255,255,.68); max-width: 260px; }
-
     .tbl{ width:100%; border-collapse: collapse; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
     .tbl th, .tbl td{ text-align:left; padding:10px 10px; border-bottom: 1px solid rgba(255,255,255,.08); white-space:nowrap; }
     .tbl th{ color: rgba(255,255,255,.65); font-weight: 700; letter-spacing:.06em; text-transform: uppercase; font-size: 11px; }
 
-    .canvasWrap{
-      margin-top: 10px;
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.20);
-      overflow:hidden;
-    }
-    canvas{ width:100%; height:260px; display:block; }
-
-    .legend{
-      display:flex;
-      gap: 10px;
-      flex-wrap:wrap;
-      font-size: 12px;
-      color: rgba(255,255,255,.70);
-      margin-top: 10px;
-    }
-    .legItem{ display:flex; align-items:center; gap:8px; }
-    .sw{ width:10px; height:10px; border-radius:4px; background:#fff; opacity:.9; }
-
-    .footerNote{ text-align:center; color: rgba(255,255,255,.55); font-size: 12px; margin-top: 18px; }
-
-    .reveal{ opacity:0; transform: translateY(10px); transition: 500ms ease; }
-    .reveal.show{ opacity:1; transform: translateY(0); }
+    .chartWrap{ height: 240px; }
+    .chartWrapSm{ height: 200px; }
+    canvas{ display:block; width:100% !important; height:100% !important; }
 
     @media (max-width: 980px){
       .grid{ grid-template-columns: 1fr; }
-      .chips .chip{ min-width: 160px; }
       .cards3{ grid-template-columns: 1fr; }
-      canvas{ height:220px; }
     }
   </style>
 </head>
@@ -282,14 +160,11 @@ HTML = r"""
 <body>
   <div class="wrap">
     <div class="topbar">
-      <div class="brand">
-        <span class="dot"></span>
-        <span>POLYSCALP</span>
-      </div>
+      <div class="brand"><span class="dot"></span><span>POLYSCALP</span></div>
       <div class="navlinks">
-        <a href="#about">About</a>
-        <a href="#market">Market</a>
-        <a href="#control">Control</a>
+        <a href="#statusCard">Status</a>
+        <a href="#bookCard">Book</a>
+        <a href="#tradeChartsCard">Trade Charts</a>
       </div>
     </div>
 
@@ -299,30 +174,20 @@ HTML = r"""
         <div class="hero">
           <div class="kicker">POLYMARKET · BTC UP/DOWN · 15 MIN</div>
           <h1 class="title">Trading Dashboard</h1>
-          <p class="subtitle">Live book snapshot + scanner + paper execution.</p>
+          <p class="subtitle">Live snapshot + scanner + paper execution + manual close.</p>
 
-          <div class="chips reveal">
-            <div class="chip"><b>WS</b><span>market subscription</span></div>
-            <div class="chip"><b>SCANNER</b><span>next market rotation</span></div>
-            <div class="chip"><b>EXECUTION</b><span>paper fills + sizing</span></div>
-          </div>
-
-          <div class="actions reveal" id="control">
+          <div class="actions" id="control">
             <button class="btn primary" onclick="startBot()">Start</button>
             <button class="btn" onclick="stopBot()">Stop</button>
-            <button class="btn danger" onclick="resetChart()">Reset chart</button>
+            <button class="btn danger" onclick="closeAll()">Close All</button>
             <span class="muted" id="runflag" style="align-self:center;">…</span>
           </div>
 
-          <div class="bigwords reveal">
-            Live<br/>Status<br/>Line
-          </div>
-
-          <section class="card reveal" id="about">
+          <section class="card" id="statusCard">
             <h3>Status</h3>
             <div class="statusbar" id="status">Connecting…</div>
 
-            <div class="cards3" id="market">
+            <div class="cards3">
               <div class="mini"><div class="label">Slug</div><div class="val" id="slug">--</div></div>
               <div class="mini"><div class="label">TTE</div><div class="val" id="tte">--</div></div>
               <div class="mini"><div class="label">Balance</div><div class="val" id="bal">--</div></div>
@@ -333,79 +198,64 @@ HTML = r"""
             </div>
           </section>
 
-          <section class="card reveal" style="margin-top:12px;">
-            <h3>Live chart</h3>
-            <div class="muted">Balance (equity) + YES/NO mid prices. Stored in browser memory (not server).</div>
-            <div class="canvasWrap"><canvas id="chart" width="1100" height="260"></canvas></div>
-            <div class="legend">
-              <div class="legItem"><span class="sw" id="swBal" style="background:#ffffff;"></span> Balance</div>
-              <div class="legItem"><span class="sw" id="swYes" style="background:#7cf0c0;"></span> YES mid</div>
-              <div class="legItem"><span class="sw" id="swNo"  style="background:#ff7a7a;"></span> NO mid</div>
-            </div>
+          <section class="card" id="bookCard">
+            <h3>Bid/Ask (live ~100ms)</h3>
+            <div class="muted" style="margin-bottom:10px;">YES + NO bid/ask stream (time-based).</div>
+            <div class="chartWrap"><canvas id="bookChart"></canvas></div>
           </section>
 
-          <div class="footerNote reveal">
-            Your chart won’t “prove” profitability; it only visualizes your paper model + mid marks.
-          </div>
+          <section class="card" id="tradeChartsCard">
+            <h3>Trade-close charts</h3>
+            <div class="muted" style="margin-bottom:10px;">
+              These update ONLY when a position fully closes (shares -> 0).
+            </div>
+
+            <div class="cards3">
+              <div class="mini"><div class="label">Total PnL</div><div class="val" id="pnlTotal">--</div></div>
+              <div class="mini"><div class="label">Realized PnL</div><div class="val" id="pnlReal">--</div></div>
+              <div class="mini"><div class="label">Winrate</div><div class="val" id="winrate">--</div></div>
+            </div>
+
+            <div class="chartWrap" style="margin-top:12px;"><canvas id="equityChart"></canvas></div>
+            <div class="chartWrapSm" style="margin-top:12px;"><canvas id="pnlChart"></canvas></div>
+            <div class="chartWrapSm" style="margin-top:12px;"><canvas id="wrChart"></canvas></div>
+          </section>
         </div>
       </div>
 
       <!-- RIGHT -->
       <div class="side">
-        <div class="portrait reveal">
-          <div class="logoBox">
-            <div class="logoMark">PM</div>
-            <div class="name">Polyscalp</div>
-            <div class="desc">UI reads snapshots from /ws. If you see 0.01/0.99 constantly, your feed mapping is wrong.</div>
-          </div>
-        </div>
-
-        <div class="card reveal">
-          <h3>PnL</h3>
-          <div class="cards3">
-            <div class="mini"><div class="label">Realized</div><div class="val" id="pnl_real">--</div></div>
-            <div class="mini"><div class="label">Unrealized</div><div class="val" id="pnl_unreal">--</div></div>
-            <div class="mini"><div class="label">Total</div><div class="val" id="pnl_total">--</div></div>
-          </div>
-        </div>
-
-        <div class="card reveal">
-          <h3>Winrate</h3>
-          <div class="cards3">
-            <div class="mini"><div class="label">Wins</div><div class="val" id="st_wins">--</div></div>
-            <div class="mini"><div class="label">Losses</div><div class="val" id="st_losses">--</div></div>
-            <div class="mini"><div class="label">Winrate</div><div class="val" id="st_wr">--</div></div>
-          </div>
-        </div>
-
-        <div class="card reveal" style="margin-top:12px;">
+        <div class="card">
           <h3>Positions</h3>
-          <div class="muted" style="margin-bottom:8px;">Live paper positions (by asset)</div>
+          <div class="muted" style="margin-bottom:8px;">Click Close to force-close stuck positions.</div>
           <div style="overflow:auto;">
             <table class="tbl">
-              <thead><tr><th>asset</th><th>shares</th><th>avg_px</th></tr></thead>
+              <thead>
+                <tr><th>asset</th><th>shares</th><th>avg_px</th><th>action</th></tr>
+              </thead>
               <tbody id="positionsBody"></tbody>
             </table>
           </div>
         </div>
 
-        <div class="card reveal" style="margin-top:12px;">
+        <div class="card">
           <h3>Open Orders</h3>
           <div class="muted" style="margin-bottom:8px;">Resting limit orders</div>
           <div style="overflow:auto;">
             <table class="tbl">
-              <thead><tr><th>id</th><th>asset</th><th>side</th><th>px</th><th>shares</th><th>age</th></tr></thead>
+              <thead>
+                <tr><th>id</th><th>asset</th><th>side</th><th>px</th><th>shares</th><th>age</th></tr>
+              </thead>
               <tbody id="ordersBody"></tbody>
             </table>
           </div>
         </div>
 
-        <div class="card reveal">
+        <div class="card">
           <h3>Quick tips</h3>
           <div class="muted">
-            • If balance resets, your PaperExecution isn't loading/saving state correctly.<br/>
-            • Winrate is meaningless unless your “trade close” definition is consistent.<br/>
-            • Chart uses whatever you mark to mid — garbage in, pretty garbage out.
+            • Trade charts update on FULL close only (shares -> 0).<br/>
+            • Book chart updates continuously (time-based) for visibility.
           </div>
         </div>
       </div>
@@ -413,43 +263,46 @@ HTML = r"""
   </div>
 
   <script>
-    // scroll reveal
-    const io = new IntersectionObserver((entries)=> {
-      entries.forEach(e => { if(e.isIntersecting) e.target.classList.add("show"); });
-    }, {threshold: 0.08});
-    document.querySelectorAll(".reveal").forEach(el => io.observe(el));
-
     function fmt2(x){
       if (x === null || x === undefined) return "--";
       if (typeof x === "number") return x.toFixed(2);
       return String(x);
     }
-    function esc(s){ return String(s ?? "--"); }
+    function esc(s){ return String(s ?? "--").replaceAll("'", "\\'"); }
     function n2(x){ return (x===null||x===undefined) ? "--" : (typeof x==="number" ? x.toFixed(2) : String(x)); }
 
-    // ------- tables -------
+    async function startBot() { await fetch("/api/start", { method: "POST" }); }
+    async function stopBot()  { await fetch("/api/stop",  { method: "POST" }); }
+    async function closePos(assetId){
+      await fetch("/api/close", {
+        method:"POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({asset_id: assetId})
+      });
+    }
+    async function closeAll(){ await fetch("/api/close_all", { method:"POST" }); }
+
     function renderPositions(list){
       const body = document.getElementById("positionsBody");
-      if(!body) return;
       body.innerHTML = "";
       (list || []).forEach(p => {
         const tr = document.createElement("tr");
         tr.innerHTML =
           `<td>${esc(p.asset_id)}</td>`+
           `<td>${n2(p.shares)}</td>`+
-          `<td>${n2(p.avg_px)}</td>`;
+          `<td>${n2(p.avg_px)}</td>`+
+          `<td><button class="btn danger" style="padding:6px 10px; font-size:12px;" onclick="closePos('${esc(p.asset_id)}')">Close</button></td>`;
         body.appendChild(tr);
       });
       if((list||[]).length===0){
         const tr=document.createElement("tr");
-        tr.innerHTML = `<td colspan="3" class="muted" style="padding:12px 10px;">No positions</td>`;
+        tr.innerHTML = `<td colspan="4" class="muted" style="padding:12px 10px;">No positions</td>`;
         body.appendChild(tr);
       }
     }
 
     function renderOrders(list){
       const body = document.getElementById("ordersBody");
-      if(!body) return;
       body.innerHTML = "";
       (list || []).forEach(o => {
         const tr = document.createElement("tr");
@@ -469,121 +322,133 @@ HTML = r"""
       }
     }
 
-    // ------- chart (no external libs) -------
-    const MAX_PTS = 1800; // ~ 7.5 min at 0.25s; browser-side only
-    let tsArr = [], balArr = [], yesArr = [], noArr = [];
+    // ---------- Trade-close charts (x-axis = trade number, not time) ----------
+    const MAX_TRADE_POINTS = 300;
+    const tradeLabels = [];
+    const equitySeries = [];
+    const betSeries = [];   // %
+    const pnlSeries = [];
+    const wrSeries = [];    // %
 
-    function resetChart(){
-      tsArr = []; balArr = []; yesArr = []; noArr = [];
-      drawChart();
-    }
+    function pushTradePoint(label, equity, betFrac, pnlTotal, winrate){
+      tradeLabels.push(label);
+      equitySeries.push(equity);
+      betSeries.push((betFrac==null? null : betFrac*100.0));
+      pnlSeries.push(pnlTotal);
+      wrSeries.push((winrate==null? null : winrate*100.0));
 
-    function pushPoint(ts, balance, yesMid, noMid){
-      if (typeof ts !== "number") return;
-      tsArr.push(ts);
-      balArr.push(typeof balance === "number" ? balance : null);
-      yesArr.push(typeof yesMid === "number" ? yesMid : null);
-      noArr.push(typeof noMid === "number" ? noMid : null);
-
-      if (tsArr.length > MAX_PTS){
-        tsArr.shift(); balArr.shift(); yesArr.shift(); noArr.shift();
+      if (tradeLabels.length > MAX_TRADE_POINTS){
+        tradeLabels.shift(); equitySeries.shift(); betSeries.shift(); pnlSeries.shift(); wrSeries.shift();
       }
     }
 
-    function drawLine(ctx, xs, ys, x0,y0,w,h, ymin, ymax, color, width){
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.beginPath();
-
-      let started = false;
-      const n = xs.length;
-      for(let i=0;i<n;i++){
-        const yv = ys[i];
-        if (yv === null || yv === undefined) { started=false; continue; }
-        const x = x0 + (i/(n-1 || 1))*w;
-        const y = y0 + (1 - ((yv - ymin) / (ymax - ymin || 1)))*h;
-        if(!started){ ctx.moveTo(x,y); started=true; }
-        else ctx.lineTo(x,y);
+    const equityChart = new Chart(document.getElementById("equityChart"), {
+      type: "line",
+      data: {
+        labels: tradeLabels,
+        datasets: [
+          { label: "Equity", data: equitySeries, tension: 0.25, pointRadius: 0 },
+          { label: "Bet %", data: betSeries, tension: 0.25, pointRadius: 0, yAxisID: "y2" }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#cfd6e4" } } },
+        scales: {
+          x: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" } },
+          y: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" } },
+          y2: { position: "right", ticks: { color: "#9aa6bd" }, grid: { display: false } }
+        }
       }
-      ctx.stroke();
+    });
+
+    const pnlChart = new Chart(document.getElementById("pnlChart"), {
+      type: "line",
+      data: { labels: tradeLabels, datasets: [{ label: "Total PnL", data: pnlSeries, tension: 0.25, pointRadius: 0 }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#cfd6e4" } } },
+        scales: {
+          x: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" } },
+          y: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" } }
+        }
+      }
+    });
+
+    const wrChart = new Chart(document.getElementById("wrChart"), {
+      type: "line",
+      data: { labels: tradeLabels, datasets: [{ label: "Winrate %", data: wrSeries, tension: 0.25, pointRadius: 0 }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#cfd6e4" } } },
+        scales: {
+          x: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" } },
+          y: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" }, min: 0, max: 100 }
+        }
+      }
+    });
+
+    function redrawTradeCharts(){
+      equityChart.update("none");
+      pnlChart.update("none");
+      wrChart.update("none");
     }
 
-    function drawChart(){
-      const canvas = document.getElementById("chart");
-      if(!canvas) return;
-      const ctx = canvas.getContext("2d");
-      const W = canvas.width, H = canvas.height;
+    // ---------- Book chart (time-based, ~100ms) ----------
+    const MAX_BOOK_POINTS = 400;
+    const bookLabels = [];
+    const yesBidSeries = [];
+    const yesAskSeries = [];
+    const noBidSeries = [];
+    const noAskSeries = [];
 
-      // clear
-      ctx.clearRect(0,0,W,H);
-
-      // background grid
-      ctx.globalAlpha = 1.0;
-      ctx.strokeStyle = "rgba(255,255,255,0.06)";
-      ctx.lineWidth = 1;
-      for(let x=0; x<=W; x+=110){
-        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    function pushBookPoint(label, yb, ya, nb, na){
+      bookLabels.push(label);
+      yesBidSeries.push(yb);
+      yesAskSeries.push(ya);
+      noBidSeries.push(nb);
+      noAskSeries.push(na);
+      if (bookLabels.length > MAX_BOOK_POINTS){
+        bookLabels.shift();
+        yesBidSeries.shift(); yesAskSeries.shift(); noBidSeries.shift(); noAskSeries.shift();
       }
-      for(let y=0; y<=H; y+=65){
-        ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-      }
-
-      if(tsArr.length < 2) return;
-
-      // compute ranges (balance has different scale than prices)
-      const balVals = balArr.filter(v => typeof v === "number");
-      const yesVals = yesArr.filter(v => typeof v === "number");
-      const noVals  = noArr.filter(v => typeof v === "number");
-
-      // left axis for balance
-      let balMin = Math.min(...balVals, 0);
-      let balMax = Math.max(...balVals, 1);
-
-      // right axis for prices (0..1-ish)
-      let prMin = 0.0, prMax = 1.0;
-      const prVals = yesVals.concat(noVals);
-      if(prVals.length){
-        const mn = Math.min(...prVals);
-        const mx = Math.max(...prVals);
-        // keep some padding but clamp to [0,1]
-        prMin = Math.max(0.0, mn - 0.05);
-        prMax = Math.min(1.0, mx + 0.05);
-        if(prMax - prMin < 0.08){ prMin = Math.max(0.0, prMin-0.04); prMax = Math.min(1.0, prMax+0.04); }
-      }
-
-      const padL = 52, padR = 52, padT = 12, padB = 20;
-      const x0 = padL, y0 = padT, w = W - padL - padR, h = H - padT - padB;
-
-      // axes labels
-      ctx.fillStyle = "rgba(255,255,255,0.65)";
-      ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText(`bal ${balMin.toFixed(2)}..${balMax.toFixed(2)}`, 10, 18);
-      ctx.fillText(`px ${prMin.toFixed(2)}..${prMax.toFixed(2)}`, W - 120, 18);
-
-      // map prices onto same chart by drawing them with price-range scaling
-      // (so they remain visible). This is “visual convenience”, not statistical correctness.
-      drawLine(ctx, tsArr, balArr, x0,y0,w,h, balMin, balMax, "rgba(255,255,255,0.95)", 2.2);
-
-      // prices: draw with their own scaling but same plot area
-      // we temporarily reuse the same function with prMin/prMax
-      drawLine(ctx, tsArr, yesArr, x0,y0,w,h, prMin, prMax, "rgba(124,240,192,0.90)", 1.8);
-      drawLine(ctx, tsArr, noArr,  x0,y0,w,h, prMin, prMax, "rgba(255,122,122,0.90)", 1.8);
-
-      // border
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x0,y0,w,h);
     }
 
-    // ------- websocket -------
+    const bookChart = new Chart(document.getElementById("bookChart"), {
+      type: "line",
+      data: {
+        labels: bookLabels,
+        datasets: [
+          { label: "YES bid", data: yesBidSeries, tension: 0.2, pointRadius: 0 },
+          { label: "YES ask", data: yesAskSeries, tension: 0.2, pointRadius: 0 },
+          { label: "NO bid",  data: noBidSeries,  tension: 0.2, pointRadius: 0 },
+          { label: "NO ask",  data: noAskSeries,  tension: 0.2, pointRadius: 0 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#cfd6e4" } } },
+        scales: {
+          x: { ticks: { color: "#9aa6bd", maxRotation: 0, autoSkip: true }, grid: { color: "rgba(255,255,255,.06)" } },
+          y: { ticks: { color: "#9aa6bd" }, grid: { color: "rgba(255,255,255,.06)" } }
+        }
+      }
+    });
+
+    function redrawBookChart(){ bookChart.update("none"); }
+
+    // ---------- WS stream ----------
     let ws;
-    function wsUrl(){
-      const proto = (location.protocol === "https:") ? "wss" : "ws";
-      return `${proto}://${location.host}/ws`;
-    }
+    let lastTradeSeq = null;
+    let haveBaseline = false;
+    let lastBookPushMs = 0;
 
     function connect() {
-      ws = new WebSocket(wsUrl());
+      ws = new WebSocket(`ws://${location.host}/ws`);
 
       ws.onmessage = (ev) => {
         const s = JSON.parse(ev.data);
@@ -598,76 +463,117 @@ HTML = r"""
           `slug=${fmt2(s.slug)} | tte=${fmt2(s.tte)}s | ` +
           `YES ${fmt2(s.yes_bid)}/${fmt2(s.yes_ask)} | ` +
           `NO ${fmt2(s.no_bid)}/${fmt2(s.no_ask)} | ` +
-          `bal=${fmt2(s.balance)} | bet_frac=${fmt2(s.bet_frac)}`;
+          `bal=${s.balance ?? "--"} | bet_frac=${s.bet_frac ?? "--"}`;
 
         document.getElementById("status").textContent = line;
 
         document.getElementById("slug").textContent = fmt2(s.slug);
         document.getElementById("tte").textContent = (s.tte === null || s.tte === undefined) ? "--" : `${s.tte}s`;
-        document.getElementById("bal").textContent = fmt2(s.balance);
+        document.getElementById("bal").textContent = (s.balance === null || s.balance === undefined) ? "--" : String(s.balance);
         document.getElementById("yes").textContent = `${fmt2(s.yes_bid)}/${fmt2(s.yes_ask)}`;
         document.getElementById("no").textContent  = `${fmt2(s.no_bid)}/${fmt2(s.no_ask)}`;
-        document.getElementById("betfrac").textContent = fmt2(s.bet_frac);
+        document.getElementById("betfrac").textContent = (s.bet_frac === null || s.bet_frac === undefined) ? "--" : String(s.bet_frac);
 
-        // pnl + stats
+        // cards (these can update continuously)
         const pnl = s.pnl || {};
-        document.getElementById("pnl_real").textContent   = fmt2(pnl.realized);
-        document.getElementById("pnl_unreal").textContent = fmt2(pnl.unrealized);
-        document.getElementById("pnl_total").textContent  = fmt2(pnl.total);
-
         const st = s.stats || {};
-        document.getElementById("st_wins").textContent   = (st.wins ?? "--");
-        document.getElementById("st_losses").textContent = (st.losses ?? "--");
-        document.getElementById("st_wr").textContent     = (st.winrate === undefined || st.winrate === null) ? "--" : (typeof st.winrate==="number" ? (st.winrate*100).toFixed(2)+"%" : String(st.winrate));
+        const winrate = st.winrate;
 
-        // chart points
-        const yesMid = (typeof s.yes_bid==="number" && typeof s.yes_ask==="number") ? (s.yes_bid+s.yes_ask)/2 : null;
-        const noMid  = (typeof s.no_bid==="number"  && typeof s.no_ask==="number")  ? (s.no_bid+s.no_ask)/2   : null;
-        pushPoint(s.ts, (typeof s.balance==="number" ? s.balance : null), yesMid, noMid);
-        drawChart();
+        document.getElementById("pnlTotal").textContent = (pnl.total==null) ? "--" : pnl.total.toFixed(2);
+        document.getElementById("pnlReal").textContent  = (pnl.realized==null) ? "--" : pnl.realized.toFixed(2);
+        document.getElementById("winrate").textContent  = (winrate==null) ? "--" : (winrate*100.0).toFixed(2) + "%";
+
+        // --- Book chart: push by time (~100ms) ---
+        const nowMs = Date.now();
+        if (nowMs - lastBookPushMs >= 100) {
+          lastBookPushMs = nowMs;
+          const t = new Date(nowMs);
+          const label = t.toLocaleTimeString() + "." + String(t.getMilliseconds()).padStart(3,"0");
+          pushBookPoint(
+            label,
+            (typeof s.yes_bid === "number" ? s.yes_bid : null),
+            (typeof s.yes_ask === "number" ? s.yes_ask : null),
+            (typeof s.no_bid  === "number" ? s.no_bid  : null),
+            (typeof s.no_ask  === "number" ? s.no_ask  : null),
+          );
+          redrawBookChart();
+        }
+
+        // --- Trade charts: update ONLY on trade close (trade_seq changes) ---
+        const seq = (s.trade_seq === undefined || s.trade_seq === null) ? null : s.trade_seq;
+
+        // add baseline once (not time-based)
+        if (!haveBaseline && typeof s.balance === "number") {
+          haveBaseline = true;
+          pushTradePoint("START", s.balance, s.bet_frac, (typeof pnl.total==="number"?pnl.total:0.0), winrate);
+          redrawTradeCharts();
+        }
+
+        if (seq !== null && seq !== lastTradeSeq) {
+          // if seq increments, that means a position fully closed
+          lastTradeSeq = seq;
+
+          const label = "T" + String(seq);
+          if (typeof s.balance === "number") {
+            pushTradePoint(
+              label,
+              s.balance,
+              s.bet_frac,
+              (typeof pnl.total==="number"?pnl.total:0.0),
+              winrate
+            );
+            redrawTradeCharts();
+          }
+        }
       };
 
       ws.onclose = () => setTimeout(connect, 500);
     }
 
-    async function startBot() { await fetch("/api/start", { method: "POST" }); }
-    async function stopBot()  { await fetch("/api/stop",  { method: "POST" }); }
-
-    // initial
     connect();
-    drawChart();
   </script>
 </body>
 </html>
 """
 
-
 @app.get("/")
 async def home():
     return HTMLResponse(HTML)
-
 
 @app.post("/api/start")
 async def api_start():
     await runtime.start()
     return JSONResponse({"ok": True, "running": runtime.is_running()})
 
-
 @app.post("/api/stop")
 async def api_stop():
     await runtime.stop()
     return JSONResponse({"ok": True, "running": runtime.is_running()})
 
+class CloseReq(BaseModel):
+    asset_id: str
+    shares: float | None = None
+    price: float | None = None
+
+@app.post("/api/close")
+async def api_close(req: CloseReq):
+    await runtime.cmd_close_position(req.asset_id, req.shares, req.price)
+    return JSONResponse({"ok": True})
+
+@app.post("/api/close_all")
+async def api_close_all():
+    await runtime.cmd_close_all()
+    return JSONResponse({"ok": True})
 
 @app.websocket("/ws")
 async def ws_status(ws: WebSocket):
     await ws.accept()
-    seq = -1
+    seq = 0
     try:
-        await ws.send_text(json.dumps(runtime.snapshot, default=str, separators=(",", ":")))
+        await ws.send_text(json.dumps(runtime.snapshot))
         while True:
             seq, snap = await runtime.wait_for_update(seq)
-            await ws.send_text(json.dumps(snap, default=str, separators=(",", ":")))
+            await ws.send_text(json.dumps(snap))
     except WebSocketDisconnect:
         return
     except Exception:
