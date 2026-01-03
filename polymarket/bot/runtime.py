@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 import yaml
 
 from bot.datafeed import MarketDataFeed, WSConfig
-from bot.execution import PaperExecution, PaperExecCfg
+from bot.execution import PaperExecution
 from bot.scalp_mode import ScalpMode, MarketSpec
 from bot.strategy import EntryRules
 from bot.risk import ScalpRisk
@@ -261,3 +261,4 @@ exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
         finally:
 
             await self._publish({"running": False, "status": "stopped", "ts": int(time.time())})
+
