@@ -13,7 +13,7 @@ import yaml
 
 from bot.datafeed import MarketDataFeed, WSConfig
 from bot.execution import PaperExecution
-from bot. scalp_mode import ScalpMode, MarketSpec
+from bot.scalp_mode import ScalpMode, MarketSpec
 from bot.strategy import EntryRules
 from bot.risk import ScalpRisk
 from bot.gamma import GammaClient, GammaCfg
@@ -27,9 +27,10 @@ def _load_yaml(path: str = "config.yaml") -> Dict[str, Any]:
 class BotRuntime:
     """
     Runs bot loop in an asyncio Task and exposes live snapshots via wait_for_update().
+    Supports manual close commands from UI.
     """
 
-    def __init__(self, cfg_path: str = "config.yaml", log: Optional[logging.Logger] = None) -> None:
+    def __init__(self, cfg_path: str = "config.yaml", log:  Optional[logging.Logger] = None) -> None:
         self.cfg_path = cfg_path
         self.log = log or logging. getLogger("polyscalp")
 
@@ -38,7 +39,11 @@ class BotRuntime:
 
         self._cond = asyncio.Condition()
         self._seq = 0
-        self. snapshot:  Dict[str, Any] = {"running": False, "status": "stopped", "ts": int(time.time())}
+        self. snapshot: Dict[str, Any] = {"running": False, "status": "stopped", "ts": int(time.time())}
+        
+        # Manual close commands from UI
+        self._close_queue: list[tuple[str, Optional[float], Optional[float]]] = []  # (asset_id, shares, price)
+        self._close_all_flag = False
 
     async def start(self) -> None:
         if self._task and not self._task.done():
@@ -53,15 +58,23 @@ class BotRuntime:
                 self._task.cancel()
                 await self._task
         self._task = None
-        await self._publish({"running": False, "status": "stopped", "ts": int(time.time())})
+        await self._publish({"running": False, "status":  "stopped", "ts": int(time.time())})
 
     def is_running(self) -> bool:
         return self._task is not None and not self._task. done()
 
-    async def wait_for_update(self, last_seq: int) -> tuple[int, Dict[str, Any]]: 
+    async def wait_for_update(self, last_seq: int) -> tuple[int, Dict[str, Any]]:
         async with self._cond:
             await self._cond.wait_for(lambda: self._seq != last_seq)
             return self._seq, dict(self.snapshot)
+
+    async def cmd_close_position(self, asset_id: str, shares: Optional[float] = None, price: Optional[float] = None) -> None:
+        """Queue a manual close command for a specific position."""
+        self._close_queue.append((asset_id, shares, price))
+
+    async def cmd_close_all(self) -> None:
+        """Queue a command to close all positions."""
+        self._close_all_flag = True
 
     async def _publish(self, snap: Dict[str, Any]) -> None:
         async with self._cond:
@@ -114,7 +127,7 @@ class BotRuntime:
 
             # --- execution (paper) ---
             start_cash = float(cfg.get("start_cash_usd", 500))
-            price_cache: Dict[str, tuple[Optional[float], Optional[float]]] = {}
+            price_cache:  Dict[str, tuple[Optional[float], Optional[float]]] = {}
 
             exec_ = PaperExecution(start_cash=start_cash, price_cache=price_cache)
 
@@ -126,7 +139,7 @@ class BotRuntime:
             )
             risk = ScalpRisk(
                 tp_pct=float(cfg.get("risk", {}).get("tp_pct", 0.12)),
-                sl_pct=float(cfg. get("risk", {}).get("sl_pct", 0.10)),
+                sl_pct=float(cfg.get("risk", {}).get("sl_pct", 0.10)),
                 bet_frac_start=float(cfg.get("risk", {}).get("bet_frac_start", 0.50)),
                 bet_frac_step=float(cfg.get("risk", {}).get("bet_frac_step", 0.01)),
                 stake_cap_usd=float(cfg.get("risk", {}).get("stake_cap_usd", 1000)),
@@ -137,16 +150,17 @@ class BotRuntime:
             scalp:  Optional[ScalpMode] = None
             market:  Optional[MarketSpec] = None
             current_slug: Optional[str] = None
+            trade_seq = 0
 
             def on_book(asset_id: str, bid: Optional[float], ask: Optional[float]) -> None:
                 price_cache[asset_id] = (bid, ask)
                 if scalp is not None:
-                    scalp.on_book_top(asset_id, bid, ask)
+                    scalp. on_book_top(asset_id, bid, ask)
 
             async def start_new_market() -> None:
                 nonlocal feed, feed_task, scalp, market, current_slug
 
-                if feed is not None and feed_task is not None: 
+                if feed is not None and feed_task is not None:
                     await self._stop_feed(feed, feed_task)
                     feed, feed_task = None, None
 
@@ -167,7 +181,7 @@ class BotRuntime:
 
                 market = MarketSpec(yes_asset=yes_asset, no_asset=no_asset, end_ts=end_ts)
 
-                price_cache. clear()
+                price_cache.clear()
                 price_cache[market.yes_asset] = (None, None)
                 price_cache[market.no_asset] = (None, None)
 
@@ -187,11 +201,33 @@ class BotRuntime:
             while not self._stop_evt.is_set():
                 assert market and scalp and feed and feed_task
 
+                # --- Handle manual close commands from UI ---
+                while self._close_queue:
+                    asset_id, shares, price = self._close_queue.pop(0)
+                    if scalp.pos and scalp.pos.asset_id == asset_id:
+                        bid, ask = price_cache. get(asset_id, (None, None))
+                        exit_price = price or (bid if bid else 0.50)
+                        exit_qty = shares or scalp.pos.qty
+                        oid = await exec_.place_limit_sell(asset_id=asset_id, price=float(exit_price), size=float(exit_qty))
+                        self.log.info(f"[MANUAL] close asset={asset_id} price={exit_price} qty={exit_qty}")
+                        scalp.pos = None
+                        trade_seq += 1
+
+                if self._close_all_flag:
+                    self._close_all_flag = False
+                    if scalp.pos:
+                        bid, _ = price_cache.get(scalp.pos.asset_id, (None, None))
+                        exit_price = bid if bid else 0.50
+                        oid = await exec_.place_limit_sell(asset_id=scalp.pos.asset_id, price=float(exit_price), size=scalp.pos.qty)
+                        self.log.info(f"[MANUAL] close_all asset={scalp.pos. asset_id}")
+                        scalp.pos = None
+                        trade_seq += 1
+
                 now = int(time.time())
                 tte = market.end_ts - now
 
-                yes_bid, yes_ask = price_cache.get(market.yes_asset, (None, None))
-                no_bid, no_ask = price_cache.get(market. no_asset, (None, None))
+                yes_bid, yes_ask = price_cache. get(market.yes_asset, (None, None))
+                no_bid, no_ask = price_cache.get(market.no_asset, (None, None))
 
                 bet_frac = None
                 try:
@@ -218,11 +254,12 @@ class BotRuntime:
                         "no_bid": no_bid,
                         "no_ask": no_ask,
                         "bet_frac": bet_frac,
-                        "balance":  exs.get("equity_usd"),
+                        "balance": exs.get("equity_usd"),
                         "pnl": exs.get("pnl"),
                         "stats": exs.get("stats"),
                         "positions": exs.get("positions"),
                         "open_orders": exs.get("open_orders"),
+                        "trade_seq": trade_seq,
                     }
                 )
 
@@ -237,12 +274,12 @@ class BotRuntime:
 
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            self.log. exception("BotRuntime crashed")
+        except Exception as e: 
+            self.log.exception("BotRuntime crashed")
             await self._publish(
                 {
-                    "running": False,
-                    "status": "error",
+                    "running":  False,
+                    "status":  "error",
                     "error": repr(e),
                     "ts": int(time.time()),
                 }
