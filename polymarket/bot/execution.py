@@ -3,12 +3,12 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 class PaperExecution:
-    """Paper trading with in-memory state only."""
+    """Paper trading with in-memory state only.  No persistence."""
     
-    def __init__(self, start_cash:  float = 500.0, price_cache: Dict = None):
+    def __init__(self, start_cash:  float = 500. 0, price_cache: Optional[Dict] = None):
         self.cash = float(start_cash)
         self.inv: Dict[str, float] = {}
         self.avg_cost: Dict[str, float] = {}
@@ -54,7 +54,7 @@ class PaperExecution:
         return {
             "cash_usd": float(self.cash),
             "equity_usd": float(eq),
-            "pnl": {
+            "pnl":  {
                 "realized": float(self.realized_pnl),
                 "unrealized": float(unreal),
                 "total": float(self.realized_pnl + unreal),
