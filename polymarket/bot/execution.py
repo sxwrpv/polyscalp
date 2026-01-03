@@ -1,16 +1,15 @@
 # bot/execution.py
-import json
 import time
 import uuid
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-class PaperExecution:
+
+class PaperExecution: 
     """Paper trading with in-memory state only.  No persistence."""
     
-    def __init__(self, start_cash:  float = 500. 0, price_cache: Optional[Dict] = None):
+    def __init__(self, start_cash: float = 500.0, price_cache: Optional[Dict] = None):
         self.cash = float(start_cash)
-        self.inv: Dict[str, float] = {}
+        self.inv:  Dict[str, float] = {}
         self.avg_cost: Dict[str, float] = {}
         self.realized_pnl: float = 0.0
         self.wins: int = 0
@@ -54,7 +53,7 @@ class PaperExecution:
         return {
             "cash_usd": float(self.cash),
             "equity_usd": float(eq),
-            "pnl":  {
+            "pnl": {
                 "realized": float(self.realized_pnl),
                 "unrealized": float(unreal),
                 "total": float(self.realized_pnl + unreal),
